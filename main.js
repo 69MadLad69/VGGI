@@ -1,5 +1,3 @@
-'use strict';
-
 let gl;                         // The webgl context.
 let surface;                    // A surface model
 let shProgram;                  // A shader program
@@ -19,98 +17,124 @@ function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
 
-
-// Constructor
 function Model(name) {
     this.name = name;
-    this.iVertexBuffer = gl.createBuffer();
-    this.count = 0;
 
-    this.BufferData = function(vertices) {
+    this.vertexBuffer = gl.createBuffer();
+    this.normalBuffer = gl.createBuffer();
+    this.indexBuffer  = gl.createBuffer();
+    this.indexCount = 0;
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STREAM_DRAW);
+    this.BufferData = function (geometry) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geometry.positions), gl.STATIC_DRAW);
 
-        this.count = vertices.length/3;
-    }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geometry.normals), gl.STATIC_DRAW);
 
-    this.Draw = function() {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(geometry.indices), gl.STATIC_DRAW);
 
-         gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
+        this.indexCount = geometry.indices.length;
+    };
+
+    this.Draw = function () {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
         gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(shProgram.iAttribVertex);
 
-        const uSteps = params.uSteps;
-        const tSteps = params.tSteps;
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.vertexAttribPointer(shProgram.iAttribNormal, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shProgram.iAttribNormal);
 
-        const uLineVertexCount = uSteps + 1;
-        const vLineVertexCount = tSteps + 1;
-
-        let offset = 0;
-
-        for (let i = 0; i <= tSteps; i++) {
-            gl.drawArrays(gl.LINE_STRIP, offset, uLineVertexCount);
-            offset += uLineVertexCount;
-        }
-
-        for (let j = 0; j < uSteps; j++) {
-            gl.drawArrays(gl.LINE_STRIP, offset, vLineVertexCount);
-            offset += vLineVertexCount;
-        }
-    }
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
 }
+
+function analyticNormal(u, t, p) {
+    const { a, c, theta } = p;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    const cosU = Math.cos(u);
+    const sinU = Math.sin(u);
+
+    const A = a + t * cosT + c * t * t * sinT;
+    const Aprime = cosT + 2 * c * t * sinT;
+    const zprime = sinT + 2 * c * t * cosT;
+
+    let nx = -A * zprime * cosU;
+    let ny = -A * zprime * sinU;
+    let nz = A * Aprime;
+
+    const len = Math.hypot(nx, ny, nz) || 1.0;
+    return { x: nx / len, y: ny / len, z: nz / len };
+}
+
 
 
 // Constructor
 function ShaderProgram(name, program) {
-
     this.name = name;
     this.prog = program;
 
-    // Location of the attribute variable in the shader program.
     this.iAttribVertex = -1;
-    // Location of the uniform specifying a color for the primitive.
+    this.iAttribNormal = -1;
     this.iColor = -1;
-    // Location of the uniform matrix representing the combined transformation.
-    this.iModelViewProjectionMatrix = -1;
 
-    this.Use = function() {
+    this.iModelViewProjectionMatrix = -1;
+    this.iModelViewMatrix = -1;
+    this.iNormalMatrix = -1;
+
+    this.iLightPosition = -1;
+    this.iAmbient = -1;
+    this.iDiffuse = -1;
+    this.iSpecular = -1;
+    this.iShininess = -1;
+
+    this.Use = function () {
         gl.useProgram(this.prog);
-    }
+    };
 }
 
+let lightAngle = 0.0;
 
-/* Draws a colored cube, along with a set of coordinate axes.
- * (Note that the use of the above drawPrimitive function is not an efficient
- * way to draw with WebGL.  Here, the geometry is so simple that it doesn't matter.)
- */
-function draw() { 
+function draw(time) {
     resizeCanvasToDisplaySize(gl.canvas);
     gl.clearColor(0.05, 0.05, 0.1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    
-    // Adjust zoom by modifying camera distance (not clipping)
+
+    if (time === undefined) time = performance.now();
+    lightAngle = time * 0.0003;
     let cameraDistance = zoom;
     let fov = Math.PI / 8;
-    let projection = m4.perspective(fov, gl.canvas.width / gl.canvas.height, 0.1, 100);
-    
-    // View matrix from the TrackballRotator
-    let modelView = spaceball.getViewMatrix();
+    let projection = m4.perspective(fov, gl.canvas.width / gl.canvas.height, 0.1, 300.0);
 
-    // Move the whole scene back based on zoom
+    let viewRot = spaceball.getViewMatrix();
     let translateToPointZero = m4.translation(0, 0, -cameraDistance);
+    let modelView = m4.multiply(translateToPointZero, viewRot);
 
-    // Combine transforms
-    let matAccum0 = m4.multiply(translateToPointZero, modelView);
-    let modelViewProjection = m4.multiply(projection, matAccum0);
+    let modelViewProjection = m4.multiply(projection, modelView);
 
-    // Send to shader
     gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection);
-    gl.uniform4fv(shProgram.iColor, [0.2, 0.8, 1.0, 1.0]);
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelView);
+
+    let normalMatrix = m4.inverse(modelView);
+    normalMatrix = m4.transpose(normalMatrix);
+    gl.uniformMatrix4fv(shProgram.iNormalMatrix, false, normalMatrix);
+
+    const lightRadius = 15.0;
+    const lightHeight = 5.0;
+    const lx = lightRadius * Math.cos(lightAngle);
+    const ly = lightRadius * Math.sin(lightAngle);
+    const lz = lightHeight;
+    const lightWorld = [lx, ly, lz, 1.0];
+    const lightEye = m4.transformPoint(modelView, lightWorld);
+
+    gl.uniform3fv(shProgram.iLightPosition, [lightEye[0], lightEye[1], lightEye[2]]);
 
     surface.Draw();
 }
-
 
 function surfacePoint(u, t, p) {
     const { a, c, theta } = p;
@@ -128,46 +152,67 @@ function surfacePoint(u, t, p) {
     };
 }
 
-function CreateSurfaceData()
-{
-    let vertexList = [];
+function CreateSurfaceData() {
+    const positions = [];
+    const normals = [];
+    const indices = [];
 
     const { tMin, tMax, uSteps, tSteps } = params;
 
-    // U lines (circles around axis)
     for (let i = 0; i <= tSteps; i++) {
-        const t = tMin + (tMax - tMin) * i / tSteps;
+        const v = i / tSteps;
+        const t = tMin + (tMax - tMin) * v;
+
         for (let j = 0; j <= uSteps; j++) {
             const u = 2 * Math.PI * j / uSteps;
+
             const p = surfacePoint(u, t, params);
-            vertexList.push(p.x, p.y, p.z);
+            const n = analyticNormal(u, t, params);
+
+            positions.push(p.x, p.y, p.z);
+            normals.push(n.x, n.y, n.z);
         }
     }
 
-    // V lines (meridians)
-    for (let j = 0; j < uSteps; j++) {
-        const u = 2 * Math.PI * j / uSteps;
-        for (let i = 0; i <= tSteps; i++) {
-            const t = tMin + (tMax - tMin) * i / tSteps;
-            const p = surfacePoint(u, t, params);
-            vertexList.push(p.x, p.y, p.z);
+    const rowVerts = uSteps + 1;
+    for (let i = 0; i < tSteps; i++) {
+        for (let j = 0; j < uSteps; j++) {
+
+            const i0 = i * rowVerts + j;
+            const i1 = i * rowVerts + (j + 1);
+            const i2 = (i + 1) * rowVerts + j;
+            const i3 = (i + 1) * rowVerts + (j + 1);
+
+            indices.push(i0, i2, i1);
+            indices.push(i1, i2, i3);
         }
     }
 
-    return vertexList;
+    return { positions, normals, indices };
 }
-
 
 /* Initialize the WebGL context. Called from init() */
 function initGL() {
-    let prog = createProgram( gl, vertexShaderSource, fragmentShaderSource );
+    let prog = createProgram(gl, vertexShaderSource, fragmentShaderSource);
 
     shProgram = new ShaderProgram('Basic', prog);
     shProgram.Use();
 
-    shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribVertex = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribNormal = gl.getAttribLocation(prog, "normal");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
-    shProgram.iColor                     = gl.getUniformLocation(prog, "color");
+    shProgram.iModelViewMatrix = gl.getUniformLocation(prog, "ModelViewMatrix");
+    shProgram.iNormalMatrix = gl.getUniformLocation(prog, "NormalMatrix");
+    shProgram.iLightPosition = gl.getUniformLocation(prog, "uLightPosition");
+    shProgram.iAmbient = gl.getUniformLocation(prog, "uAmbient");
+    shProgram.iDiffuse = gl.getUniformLocation(prog, "uDiffuse");
+    shProgram.iSpecular = gl.getUniformLocation(prog, "uSpecular");
+    shProgram.iShininess = gl.getUniformLocation(prog, "uShininess");
+
+    gl.uniform3fv(shProgram.iAmbient,  [0.1, 0.1, 0.1]);
+    gl.uniform3fv(shProgram.iDiffuse,  [0.2, 0.7, 1.0]);
+    gl.uniform3fv(shProgram.iSpecular, [1.0, 1.0, 1.0]);
+    gl.uniform1f(shProgram.iShininess, 32.0);
 
     surface = new Model('Surface');
     surface.BufferData(CreateSurfaceData());
@@ -182,27 +227,32 @@ function updateSurface() {
 
 function setupControls() {
     const sliders = [
-        { id: 'aSlider', key: 'a', scale: 1 },
-        { id: 'cSlider', key: 'c', scale: 1 },
-        { id: 'thetaSlider', key: 'theta', scale: 1 },
-        { id: 'tRangeSlider', key: 'tRange', scale: 1 },
-        { id: 'resSlider', key: 'res', scale: 1 }
+        { id: 'aSlider', key: 'a'},
+        { id: 'cSlider', key: 'c'},
+        { id: 'thetaSlider', key: 'theta'},
+        { id: 'tRangeSlider', key: 'tRange'},
+        { id: 'uResSlider', key: 'uSteps'},
+        { id: 'vResSlider', key: 'tSteps'}
     ];
 
     sliders.forEach(sl => {
         const el = document.getElementById(sl.id);
         if (!el) return;
+
         el.addEventListener('input', e => {
             const value = parseFloat(e.target.value);
+
             if (sl.key === 'tRange') {
                 params.tMin = -value;
                 params.tMax = value;
-            } else if (sl.key === 'res') {
+            } else if (sl.key === 'uSteps') {
                 params.uSteps = Math.round(value);
+            } else if (sl.key === 'tSteps') {
                 params.tSteps = Math.round(value);
             } else {
                 params[sl.key] = value;
             }
+
             updateSurface();
         });
     });
@@ -239,7 +289,6 @@ function createProgram(gl, vShader, fShader) {
     return prog;
 }
 
-
 /**
  * initialization function that will be called when the page has loaded
  */
@@ -248,25 +297,31 @@ function init() {
     try {
         canvas = document.getElementById("webglcanvas");
         gl = canvas.getContext("webgl");
-        if ( ! gl ) {
+        if (!gl) {
             throw "Browser does not support WebGL";
         }
     }
     catch (e) {
         document.getElementById("canvas-holder").innerHTML =
-            "<p>Sorry, could not get a WebGL graphics context.</p>";
+            "<p>Could not get a WebGL graphics context.</p>";
         return;
     }
     try {
-        initGL();  // initialize the WebGL graphics context
+        initGL();
     }
     catch (e) {
         document.getElementById("canvas-holder").innerHTML =
-            "<p>Sorry, could not initialize the WebGL graphics context: " + e + "</p>";
+            "<p>Could not initialize the WebGL graphics context: " + e + "</p>";
         return;
     }
 
-    spaceball = new TrackballRotator(canvas, draw, 0);
+    spaceball = new TrackballRotator(canvas, () => {}, 0);
+
     setupControls();
-    draw();
+
+    function animate(time) {
+        draw(time);
+        requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
 }

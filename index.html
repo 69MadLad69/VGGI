@@ -149,10 +149,14 @@
         </div>
 
         <div class="control-group">
-            <label>Resolution: <span id="resValue" class="value-display">50</span></label>
-            <input type="range" id="resSlider" min="10" max="100" step="5" value="50">
+            <label>U resolution (along u): <span id="uResValue" class="value-display">50</span></label>
+            <input type="range" id="uResSlider" min="5" max="100" step="1" value="50">
         </div>
 
+        <div class="control-group">
+            <label>V resolution (along t): <span id="vResValue" class="value-display">50</span></label>
+            <input type="range" id="vResSlider" min="5" max="100" step="1" value="50">
+        </div>
         <button id="preset1">Fig.1 (θ=0.2π)</button>
         <button id="preset2">Fig.2 (θ=π/2)</button>
         <button id="preset3">Fig.3 (θ=-π/2)</button>
@@ -219,7 +223,8 @@ const initialParams = {
   c: 2.0,
   theta: 0.2 * Math.PI,
   tRange: 2.0,
-  res: 50
+  uSteps: 50,
+  tSteps: 50
 };
 
 params.a = initialParams.a;
@@ -227,20 +232,22 @@ params.c = initialParams.c;
 params.theta = initialParams.theta;
 params.tMin = -initialParams.tRange;
 params.tMax = initialParams.tRange;
-params.uSteps = initialParams.res;
-params.tSteps = initialParams.res;
+params.uSteps = initialParams.uSteps;
+params.tSteps = initialParams.tSteps;
 
 const aSlider = document.getElementById("aSlider");
 const cSlider = document.getElementById("cSlider");
 const thetaSlider = document.getElementById("thetaSlider");
 const tRangeSlider = document.getElementById("tRangeSlider");
-const resSlider = document.getElementById("resSlider");
+const uResSlider = document.getElementById("uResSlider");
+const vResSlider = document.getElementById("vResSlider");
 
 const aValue = document.getElementById("aValue");
 const cValue = document.getElementById("cValue");
 const thetaValue = document.getElementById("thetaValue");
 const tRangeValue = document.getElementById("tRangeValue");
-const resValue = document.getElementById("resValue");
+const uResValue = document.getElementById("uResValue");
+const vResValue = document.getElementById("vResValue");
 
 function updateDisplay() {
   if (!params) return;
@@ -249,16 +256,20 @@ function updateDisplay() {
   thetaValue.textContent = (params.theta ?? 0).toFixed(2);
   const tRange = Math.abs(params.tMax ?? 2);
   tRangeValue.textContent = tRange.toFixed(2);
-  resValue.textContent = (params.uSteps ?? 50).toFixed(0);
+  uResValue.textContent = (params.uSteps ?? 50).toFixed(0);
+  vResValue.textContent = (params.tSteps ?? 50).toFixed(0);
 }
-
 
 function syncSliders() {
   aSlider.value = params.a;
   cSlider.value = params.c;
   thetaSlider.value = params.theta;
-  tRangeSlider.value = params.tRange;
-  resSlider.value = params.res;
+
+  const tRange = Math.abs(params.tMax ?? initialParams.tRange);
+  tRangeSlider.value = tRange;
+
+  uResSlider.value = params.uSteps;
+  vResSlider.value = params.tSteps;
 }
 
 function triggerSurfaceUpdate() {
@@ -291,8 +302,14 @@ tRangeSlider.addEventListener("input", () => {
   updateSurface();
 });
 
-resSlider.addEventListener("input", () => {
-  params.res = parseInt(resSlider.value);
+uResSlider.addEventListener("input", () => {
+  params.uSteps = parseInt(uResSlider.value);
+  updateDisplay();
+  updateSurface();
+});
+
+vResSlider.addEventListener("input", () => {
+  params.tSteps = parseInt(vResSlider.value);
   updateDisplay();
   updateSurface();
 });
@@ -331,14 +348,15 @@ document.getElementById("resetView").addEventListener("click", () => {
   params.theta = initialParams.theta;
   params.tMin = -initialParams.tRange;
   params.tMax = initialParams.tRange;
-  params.uSteps = initialParams.res;
-  params.tSteps = initialParams.res;
+  params.uSteps = initialParams.uSteps;
+  params.tSteps = initialParams.tSteps;
 
   aSlider.value = params.a;
   cSlider.value = params.c;
   thetaSlider.value = params.theta;
   tRangeSlider.value = initialParams.tRange;
-  resSlider.value = initialParams.res;
+  uResSlider.value = initialParams.uSteps;
+  vResSlider.value = initialParams.tSteps;
 
   updateDisplay();
   updateSurface();
