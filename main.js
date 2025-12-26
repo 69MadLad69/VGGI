@@ -15,6 +15,9 @@ let params = {
     tSteps: 50
 };
 
+let texPivot = { u: 0.5, v: 0.5 };
+let texScale = 1.0;
+
 function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
@@ -22,12 +25,12 @@ function deg2rad(angle) {
 function Model(name) {
     this.name = name;
 
-    this.vertexBuffer   = gl.createBuffer();
-    this.normalBuffer   = gl.createBuffer();
-    this.tangentBuffer  = gl.createBuffer();
+    this.vertexBuffer = gl.createBuffer();
+    this.normalBuffer = gl.createBuffer();
+    this.tangentBuffer = gl.createBuffer();
     this.texCoordBuffer = gl.createBuffer();
-    this.indexBuffer    = gl.createBuffer();
-    this.indexCount     = 0;
+    this.indexBuffer = gl.createBuffer();
+    this.indexCount = 0;
 
     this.BufferData = function (geometry) {
         // positions
@@ -109,8 +112,8 @@ function analyticTangentU(u, t, p) {
     const R = a + t * cosT + c * t * t * sinT;
 
     let tx = -R * sinU;
-    let ty =  R * cosU;
-    let tz =  0.0;
+    let ty = R * cosU;
+    let tz = 0.0;
 
     const len = Math.hypot(tx, ty, tz) || 1.0;
     return { x: tx / len, y: ty / len, z: tz / len };
@@ -139,10 +142,14 @@ function ShaderProgram(name, program) {
     this.iSpecularMap = -1;
     this.iNormalMap = -1;
 
+    this.iTexPivot = -1;
+    this.iTexScale = -1;
+
     this.Use = function () {
         gl.useProgram(this.prog);
     };
 }
+
 
 let lightAngle = 0.0;
 
@@ -210,10 +217,10 @@ function surfacePoint(u, t, p) {
 
 function CreateSurfaceData() {
     const positions = [];
-    const normals   = [];
-    const tangents  = [];
+    const normals = [];
+    const tangents = [];
     const texcoords = [];
-    const indices   = [];
+    const indices = [];
 
     const { tMin, tMax, uSteps, tSteps } = params;
 
@@ -262,9 +269,9 @@ function initGL() {
     shProgram.Use();
 
     // attributes
-    shProgram.iAttribVertex   = gl.getAttribLocation(prog, "vertex");
-    shProgram.iAttribNormal   = gl.getAttribLocation(prog, "normal");
-    shProgram.iAttribTangent  = gl.getAttribLocation(prog, "tangent");
+    shProgram.iAttribVertex = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribNormal = gl.getAttribLocation(prog, "normal");
+    shProgram.iAttribTangent = gl.getAttribLocation(prog, "tangent");
     shProgram.iAttribTexCoord = gl.getAttribLocation(prog, "texCoord");
 
     // matrices
@@ -283,21 +290,29 @@ function initGL() {
     shProgram.iSpecularMap = gl.getUniformLocation(prog, "uSpecularMap");
     shProgram.iNormalMap = gl.getUniformLocation(prog, "uNormalMap");
 
-    gl.uniform3fv(shProgram.iAmbient, [0.1, 0.1, 0.1]);
-    gl.uniform3fv(shProgram.iDiffuse, [0.8, 0.8, 0.8]);
+    // texture scaling uniforms
+    shProgram.iTexPivot = gl.getUniformLocation(prog, "uTexPivot");
+    shProgram.iTexScale = gl.getUniformLocation(prog, "uTexScale");
+
+    gl.uniform3fv(shProgram.iAmbient,  [0.1, 0.1, 0.1]);
+    gl.uniform3fv(shProgram.iDiffuse,  [0.8, 0.8, 0.8]);
     gl.uniform3fv(shProgram.iSpecular, [1.0, 1.0, 1.0]);
     gl.uniform1f (shProgram.iShininess, 32.0);
 
-    gl.uniform1i(shProgram.iDiffuseMap, 0);
+    gl.uniform1i(shProgram.iDiffuseMap,  0);
     gl.uniform1i(shProgram.iSpecularMap, 1);
-    gl.uniform1i(shProgram.iNormalMap, 2);
+    gl.uniform1i(shProgram.iNormalMap,   2);
+
+    // initial UV transform
+    gl.uniform2f(shProgram.iTexPivot, texPivot.u, texPivot.v);
+    gl.uniform1f(shProgram.iTexScale, texScale);
 
     surface = new Model('Surface');
     surface.BufferData(CreateSurfaceData());
 
-    diffuseTexture = createTexture("textures/diffuse.png");
+    diffuseTexture  = createTexture("textures/diffuse.png");
     specularTexture = createTexture("textures/specular.png");
-    normalTexture = createTexture("textures/normal.png");
+    normalTexture   = createTexture("textures/normal.png");
 
     gl.enable(gl.DEPTH_TEST);
 }
@@ -367,6 +382,46 @@ function setupControls() {
     });
 }
 
+function handleKeyDown(e) {
+    if (!gl || !shProgram) return;
+
+    const step = 0.02;
+    const scaleUp  = 1.1;
+    const scaleDown = 1.0 / scaleUp;
+
+    switch (e.key.toLowerCase()) {
+        case 'a':
+            texPivot.u -= step;
+            break;
+        case 'd':
+            texPivot.u += step;
+            break;
+        case 'w':
+            texPivot.v += step;
+            break;
+        case 's':
+            texPivot.v -= step;
+            break;
+
+        case 'q':
+            texScale *= scaleUp;
+            break;
+        case 'e':
+            texScale *= scaleDown;
+            break;
+        default:
+            return;
+    }
+
+    texPivot.u = Math.max(0.0, Math.min(1.0, texPivot.u));
+    texPivot.v = Math.max(0.0, Math.min(1.0, texPivot.v));
+
+    texScale = Math.max(0.1, Math.min(10.0, texScale));
+
+    gl.uniform2f(shProgram.iTexPivot, texPivot.u, texPivot.v);
+    gl.uniform1f(shProgram.iTexScale, texScale);
+}
+
 /* Creates a program for use in the WebGL context gl, and returns the
  * identifier for that program.  If an error occurs while compiling or
  * linking the program, an exception of type Error is thrown.  The error
@@ -427,6 +482,8 @@ function init() {
     spaceball = new TrackballRotator(canvas, () => {}, 0);
 
     setupControls();
+
+    window.addEventListener('keydown', handleKeyDown);
 
     function animate(time) {
         draw(time);

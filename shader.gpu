@@ -11,6 +11,9 @@ uniform mat4 ModelViewProjectionMatrix;
 uniform mat4 ModelViewMatrix;
 uniform mat4 NormalMatrix;
 
+uniform vec2  uTexPivot;
+uniform float uTexScale;
+
 varying vec3 vPosition;
 varying vec2 vTexCoord;
 varying vec3 vT;
@@ -19,9 +22,11 @@ varying vec3 vN;
 
 void main() {
     vec4 posEye = ModelViewMatrix * vec4(vertex, 1.0);
-    vPosition   = posEye.xyz;
+    vPosition = posEye.xyz;
 
-    vTexCoord = texCoord;
+    vec2 centered = texCoord - uTexPivot;
+    vec2 scaled = centered * uTexScale;
+    vTexCoord = scaled + uTexPivot;
 
     vec3 N = normalize((NormalMatrix * vec4(normal,  0.0)).xyz);
     vec3 T = normalize((NormalMatrix * vec4(tangent, 0.0)).xyz);
